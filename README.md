@@ -4,7 +4,7 @@
 ## Download the Mario Kart gameplay videos
 2 videos are in this folder: 
 * fast (Mario trying to go as fast as possible)
-* slow (Mario trying to ba slow poke)
+* slow (Mario trying to be a slow poke)
 * put the videos in a folder (mk_videos) inside this repo folder.
 * videos available here: https://www.dropbox.com/sh/7k3m5s3ql4hfx7u/AACMQAr6fRbiexLWQDGSmV0Za?dl=0
 
