@@ -5,6 +5,10 @@ import numpy as np
 import mxnet as mx
 
 class Video:
+    """
+    Reader for video files
+    """
+
     def __init__(self, videoPathArray):
         # self.lstFilenameOut = lstFilenameOut
         self.videoPathArray = videoPathArray #[['pathToVideo', 0], ['pathToVideo', 1]]
@@ -15,7 +19,7 @@ class Video:
         self.videoData = []
         self.mxNetArraysData = []
         self.mxNetArraysLabels = []
-        self.frameCount = 3000
+        self.frameCount = 1200
         self.packSize = 0
     
     def start_here(self):
@@ -28,27 +32,23 @@ class Video:
         data, label = self.concat_arrays(self.mxNetArraysData, self.mxNetArraysLabels)
         train_data, val_data = self.define_iterator(data, label)
 
-        print('------------')
-        print('train_data: ', train_data)
-        print('val_data: ', val_data)
+        print('------ Train_data: ', train_data)
+        print('------ Val_data: ', val_data)
         return train_data, val_data
 
     
     def concat_arrays(self, dataArray, labelArray):
-        print('shape: ', dataArray[0].shape)
-        print('shape: ', dataArray[1].shape)
-        print('------------')
+        print('------ Shape: ', dataArray[0].shape)
+        print('------ Shape: ', dataArray[1].shape)
 
         combinedData = mx.nd.concat(dataArray[0], dataArray[1], dim=0)
-        print('combinedData shape: ', combinedData.shape)
+        print('------ CombinedData shape: ', combinedData.shape)
 
-        print('shape: ', labelArray[0].shape)
-        print('shape: ', labelArray[1].shape)
-        print('------------')
+        print('------ Shape: ', labelArray[0].shape)
+        print('------ Shape: ', labelArray[1].shape)
 
         combinedLabel = mx.nd.concat(labelArray[0], labelArray[1], dim=0)
-        print('combinedLabel shape: ', combinedLabel.shape)
-        # print('combinedLabel: ', combinedLabel)
+        print('------ CombinedLabel shape: ', combinedLabel.shape)
 
         return combinedData, combinedLabel
 
@@ -63,18 +63,12 @@ class Video:
 
         frameCount = self.frameCount #for testing purposes
         # frameCount_real = int(currentCap.get(cv2.CAP_PROP_FRAME_COUNT))
-        # print('frameCount_real: ',frameCount_real)
         frameWidth = int(currentCap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frameHeight = int(currentCap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         newWidth = int(frameWidth // self.imageResizerRatio)
         newHeight = int(frameHeight // self.imageResizerRatio)
 
-        
-        newFrameCount = frameCount - self.videoStart - self.bundleSize + 1
-        
-        self.packSize, remainder = divmod(newFrameCount, self.bundleSize)
-        # print('BundleSize:', self.packSize)
-        # print('newFrameCount:', newFrameCount)
+        self.packSize = frameCount - self.videoStart - self.bundleSize + 1
         
         newMxNetArray = mx.nd.empty((self.packSize, 24, newWidth, newHeight))
 
@@ -82,44 +76,48 @@ class Video:
         newFc = 0
         ret = True
         # arrays used for iteration
-        currentMxArray = mx.nd.empty((8, newHeight, newWidth, 3))
+        currentMxArray = mx.nd.empty((self.bundleSize, newHeight, newWidth, 3))
         currentNonMxArray = []
 
-        while fc < newFrameCount and ret:
+        while fc < self.packSize + self.bundleSize and ret:
             ret, currentFrame = currentCap.read()
-            # currentFrame = mx.nd.array(currentFrame).astype(np.float32)/255
             currentFrame = self.crop_image(currentFrame, frameHeight, frameWidth, newHeight, newWidth)
             
-            if len(currentNonMxArray) < 8:
+            if len(currentNonMxArray) < self.bundleSize:
                 currentNonMxArray.append(currentFrame)
             else:
-                # print(len(currentMxArray))
-                currentMxArray = mx.nd.array(currentNonMxArray).astype(np.float32)/255 # Turn the temp array into mxnet Array with values between 0 and 1
-                print('currentMxArray:', currentMxArray)
-                # print('shape:', newMxNetArray.shape[0])
+                # Turn the temp array into mxnet Array with values between 0 and 1
+                currentMxArray = mx.nd.array(currentNonMxArray).astype(np.float32)/255 
                 if(newFc >= self.packSize):
                     break
-                newMxNetArray[newFc] = currentMxArray[0:8, :, :, :].transpose((0, 3, 2, 1)).reshape((-1, 320, 180)) # reshaping
+                newMxNetArray[newFc] = currentMxArray[0:self.bundleSize, :, :, :].transpose((0, 3, 2, 1)).reshape((-1, 320, 180)) # reshaping
                 currentNonMxArray.pop(0) # Remove the first item of the list
+                currentNonMxArray.append(currentFrame)
                 newFc += 1
             fc += 1
 
         return newMxNetArray
     
     def crop_image(self, img, frameHeight, frameWidth, cropSizeY, cropSizeX):
+        """
+        crop_image(self, img, frameHeight, frameWidth, cropsizeY newcropSizeX)
+
+        Crops images to the default blah lbah
+        """
         startx = frameWidth//2 - cropSizeX//2
         starty = frameHeight//2 + cropSizeY//2
         return img[starty:starty+cropSizeY, startx:startx+cropSizeX]
 
     def define_iterator(self, data, label):
         batch_size = 32
+        permutation = np.random.permutation(len(label))
+        p_data = data[permutation]
+        p_label = label[permutation]
         ntrain = int(data.shape[0] * 0.8)
-        train_iter = mx.io.NDArrayIter(data[:ntrain, :], label[:ntrain], batch_size, shuffle=True)
-        val_iter = mx.io.NDArrayIter(data[ntrain:, :], label[ntrain:], batch_size)
+        
+        train_iter = mx.io.NDArrayIter(p_data[:ntrain, :], p_label[:ntrain], batch_size, shuffle=True)
+        val_iter = mx.io.NDArrayIter(p_data[ntrain:, :], p_label[ntrain:], batch_size)
         return train_iter, val_iter
 
     # if __name__ == '__main__':
     #     main(self)
-
-# capture = Video([['mk_video/fast_lap_01.mp4', 0], ['mk_video/slow_lap_01.mp4', 1]])
-# capture.start_here()

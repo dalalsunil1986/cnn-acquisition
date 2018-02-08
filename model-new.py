@@ -9,15 +9,13 @@ import numpy as np
 # from video_data_loader import VideoDataLoader
 from videoCap import Video
 
-model_ctx = mx.cpu()
-data_ctx = mx.cpu()
+ctx = mx.cpu()
 
 # define a convolutional neural network
 def MKnet():
     net = gluon.nn.Sequential()
     
     with net.name_scope():
-        # convolutional layers with pooling
         net.add(gluon.nn.Conv2D(channels=96, kernel_size=3, activation='relu'))
         net.add(gluon.nn.BatchNorm(axis=1, center=True, scale=True))
         net.add(gluon.nn.MaxPool2D(pool_size=2, strides=2))
@@ -46,15 +44,18 @@ def MKnet():
         net.add(gluon.nn.Dropout(.5))
         net.add(gluon.nn.Dense(2))
         
-    net.collect_params().initialize(mx.init.Xavier(magnitude=2.24), ctx=mx.cpu())
-    return net
+    net.collect_params().initialize(mx.init.Xavier(magnitude=2.24), ctx=ctx)
+    loss = gluon.loss.SoftmaxCrossEntropyLoss()
+    trainer = gluon.Trainer(net.collect_params(), 'sgd', {'learning_rate': 0.001})
+    return net, trainer, loss
 
 def evaluate_accuracy(model, dataIterator):
+    dataIterator.reset()
     accuracy = mx.metric.Accuracy()
-    
+
     for batch in dataIterator:
-        data = batch.data[0].as_in_context(mx.cpu())
-        labels = batch.label[0].as_in_context(mx.cpu())
+        data = batch.data[0].as_in_context(ctx)
+        labels = batch.label[0].as_in_context(ctx)
         outputs = model(data)
         predictions = nd.argmax(outputs, axis=1)
         
@@ -66,11 +67,12 @@ def evaluate_accuracy(model, dataIterator):
 def train(model, train_data, test_data, epochs, trainer, smce_loss):
     print("Starting training ...")
     for e in range(epochs):
+        train_data.reset()
         cumulative_loss = 0
         
         for batch in train_data:
-            data = batch.data[0].as_in_context(mx.cpu())
-            labels = batch.label[0].as_in_context(mx.cpu())
+            data = batch.data[0].as_in_context(ctx)
+            labels = batch.label[0].as_in_context(ctx)
             
             with autograd.record():
                 outputs = model(data)
@@ -82,26 +84,16 @@ def train(model, train_data, test_data, epochs, trainer, smce_loss):
 
         train_accuracy = evaluate_accuracy(model, train_data)
         test_accuracy = evaluate_accuracy(model, test_data)
-
             
         loss_val = cumulative_loss / (batch.data[0].shape[0] * 32)
-        print("Epoch %s | Loss: %s | Train_Acc: %s | Test_Acc: %s" %
-             (e, loss_val, train_accuracy, test_accuracy))
+        print("Epoch %d | Loss: %s | Train_Acc: %.4f | Test_Acc: %.4f" %(e, loss_val, train_accuracy, test_accuracy))
 
-        train_data.reset()
-        test_data.reset()
 
 def main():
-    # video_files = [('./data/fast_lap_01.mp4', 0), ('./data/slow_lap_01.mp4', 1)] # (file name, label, number of frames)
-    vid_loader = Video([['mk_video/fast_lap_01.mp4', 0], ['mk_video/slow_lap_01.mp4', 1]])
-    train_data_iter, test_data_iter = vid_loader.start_here()
-
-    mk_net = MKnet()
-    smce_loss = gluon.loss.SoftmaxCrossEntropyLoss()
-    # trainer = gluon.Trainer(mk_net.collect_params(), 'sgd', {'learning_rate': 0.001, 'wd': 1e-6})
-    trainer = gluon.Trainer(mk_net.collect_params(), 'sgd', {'learning_rate': 0.001})
-
-    train(mk_net, train_data_iter, test_data_iter, 100, trainer, smce_loss)
+    vid_loader = Video([['mk_video/fast_lap_01.mp4', 0], ['mk_video/slow_lap_01.mp4', 1]]) # Load Videos+Labels
+    train_data_iter, test_data_iter = vid_loader.start_here() #retrieve training and testing data
+    mk_net, mk_trainer, mk_loss = MKnet() # Get ourt NN, trainer and loss function
+    train(mk_net, train_data_iter, test_data_iter, 100, mk_trainer, mk_loss) #Starts training
 
 if __name__ == '__main__':
     main()
